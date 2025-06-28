@@ -1,5 +1,5 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   TriangleAlert as AlertTriangle,
   ArrowLeft,
@@ -25,29 +25,29 @@ const { width } = Dimensions.get("window");
 
 export default function ResultScreen() {
   const router = useRouter();
+  const { result } = useLocalSearchParams();
 
-  // Mock result data
-  const result = {
-    condition: "Mild Eczema",
-    confidence: 87,
-    severity: "Mild",
-    image:
-      "https://images.pexels.com/photos/5938519/pexels-photo-5938519.jpeg?auto=compress&cs=tinysrgb&w=400",
-    description:
-      "Eczema is a common skin condition that causes dry, itchy, and inflamed skin. The affected area shows typical signs of mild eczematous dermatitis.",
-    recommendations: [
-      "Apply fragrance-free moisturizer twice daily",
-      "Avoid known triggers like harsh soaps",
-      "Use lukewarm water when bathing",
-      "Consider over-the-counter hydrocortisone cream",
-    ],
-    riskFactors: [
-      "Family history of allergies",
-      "Dry skin conditions",
-      "Environmental allergens",
-    ],
-  };
+  if (!result) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={{ textAlign: "center", marginTop: 40 }}>
+          Loading result...
+        </Text>
+      </SafeAreaView>
+    );
+  }
 
+  const parsedResult = JSON.parse(result as string);
+
+  // Dynamically calculate severity based on confidence
+  const severity =
+    parsedResult.confidence >= 90
+      ? "Mild"
+      : parsedResult.confidence >= 70
+      ? "Moderate"
+      : "Severe";
+
+  // Dynamically get confidence color
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 90) return "#10b981";
     if (confidence >= 70) return "#f59e0b";
@@ -71,10 +71,7 @@ export default function ResultScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color="#1f2937" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Analysis Result</Text>
@@ -84,9 +81,16 @@ export default function ResultScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Result Image */}
+        {/* Image Section */}
         <View style={styles.imageContainer}>
-          <Image source={{ uri: result.image }} style={styles.resultImage} />
+          <Image
+            source={{
+              uri:
+                parsedResult.image ??
+                "https://via.placeholder.com/300x200.png?text=Skin+Scan",
+            }}
+            style={styles.resultImage}
+          />
           <LinearGradient
             colors={["transparent", "rgba(0,0,0,0.5)"]}
             style={styles.imageOverlay}
@@ -96,38 +100,39 @@ export default function ResultScreen() {
               <Text
                 style={[
                   styles.confidenceValue,
-                  { color: getConfidenceColor(result.confidence) },
+                  { color: getConfidenceColor(parsedResult.confidence) },
                 ]}
               >
-                {result.confidence}%
+                {parsedResult.confidence}%
               </Text>
             </View>
           </LinearGradient>
         </View>
 
-        {/* Diagnosis Card */}
+        {/* Diagnosis Section */}
         <View style={styles.diagnosisCard}>
           <View style={styles.diagnosisHeader}>
             <View style={styles.diagnosisIcon}>
               {(() => {
-                const IconComponent = getSeverityIcon(result.severity);
+                const IconComponent = getSeverityIcon(severity);
                 return (
                   <IconComponent
                     size={24}
-                    color={result.severity === "Mild" ? "#10b981" : "#f59e0b"}
+                    color={severity === "Mild" ? "#10b981" : "#f59e0b"}
                   />
                 );
               })()}
             </View>
             <View style={styles.diagnosisInfo}>
-              <Text style={styles.conditionName}>{result.condition}</Text>
-              <Text style={styles.severityText}>
-                Severity: {result.severity}
-              </Text>
+              <Text style={styles.conditionName}>{parsedResult.predicted_class}</Text>
+              <Text style={styles.severityText}>Severity: {severity}</Text>
             </View>
           </View>
 
-          <Text style={styles.description}>{result.description}</Text>
+          <Text style={styles.description}>
+            Based on the image and symptoms provided, the model suggests the
+            above condition with the listed treatment recommendations below.
+          </Text>
         </View>
 
         {/* Recommendations */}
@@ -137,28 +142,15 @@ export default function ResultScreen() {
             <Text style={styles.sectionTitle}>Recommendations</Text>
           </View>
 
-          {result.recommendations.map((recommendation, index) => (
-            <View key={index} style={styles.recommendationItem}>
-              <View style={styles.bulletPoint} />
-              <Text style={styles.recommendationText}>{recommendation}</Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Risk Factors */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <AlertTriangle size={20} color="#f59e0b" />
-            <Text style={styles.sectionTitle}>Common Risk Factors</Text>
-          </View>
-
-          <View style={styles.riskFactorsContainer}>
-            {result.riskFactors.map((factor, index) => (
-              <View key={index} style={styles.riskFactor}>
-                <Text style={styles.riskFactorText}>{factor}</Text>
+          {parsedResult.recommendation
+            .split("\n")
+            .filter((line: string) => line.trim().length > 0 && !line.startsWith("Disclaimer"))
+            .map((recommendation: string, index: number) => (
+              <View key={index} style={styles.recommendationItem}>
+                <View style={styles.bulletPoint} />
+                <Text style={styles.recommendationText}>{recommendation}</Text>
               </View>
             ))}
-          </View>
         </View>
 
         {/* Action Buttons */}
@@ -358,24 +350,6 @@ const styles = StyleSheet.create({
     color: "#4b5563",
     lineHeight: 22,
     flex: 1,
-  },
-  riskFactorsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  riskFactor: {
-    backgroundColor: "#fef3c7",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#fed7aa",
-  },
-  riskFactorText: {
-    fontSize: 14,
-    fontFamily: "Inter-Medium",
-    color: "#92400e",
   },
   actions: {
     paddingHorizontal: 20,
